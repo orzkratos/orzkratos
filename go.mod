@@ -1,4 +1,4 @@
-module github.com/orzkratos/clikratos
+module github.com/orzkratos/orzkratos
 
 go 1.22.8
 

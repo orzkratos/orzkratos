@@ -1,17 +1,17 @@
-# clikratos
+# orzkratos
 make it simple to exec kratos commands such as "kratos proto add api/helloworld/demo.proto".
 
 # install
 
 ```bash
-go install github.com/orzkratos/clikratos/cmd/clikratos-add-proto@latest
+go install github.com/orzkratos/orzkratos/cmd/orzkratos-add-proto@latest
 ```
 
 # command
 
 new demo proto:
 ```bash
-cd project-path/api/helloworld && clikratos-add-proto demo.proto
+cd project-path/api/helloworld && orzkratos-add-proto demo.proto
 ```
 
 same with this:
@@ -23,5 +23,5 @@ simple command:
 ```bash
 cd project-path/api/helloworld
 
-clikratos-add-proto demo
+orzkratos-add-proto demo
 ```
