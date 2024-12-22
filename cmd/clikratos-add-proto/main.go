@@ -9,6 +9,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/yyle88/done"
+	"github.com/yyle88/must"
 	"github.com/yyle88/osexec"
 	"github.com/yyle88/osexistpath/osomitexist"
 	"github.com/yyle88/rese"
@@ -28,13 +29,15 @@ func main() {
 	flag.StringVar(&name, "name", "", "proto-file-name. example: demo.proto / demo")
 	flag.Parse()
 
+	must.Nice(name)
+
 	protoPath := tern.BVF(strings.HasSuffix(name, ".proto"), name, func() string {
 		return name + ".proto"
 	})
 
 	projectPath := currentPath
 	for {
-		if osomitexist.IsFile(filepath.Join(projectPath, "Makefile")) {
+		if osomitexist.IsFile(filepath.Join(projectPath, "go.mod")) {
 			break
 		}
 		subName := filepath.Base(projectPath)
