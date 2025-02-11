@@ -14,6 +14,7 @@ import (
 	"github.com/yyle88/osexistpath/osomitexist"
 	"github.com/yyle88/rese"
 	"github.com/yyle88/tern"
+	"github.com/yyle88/tern/zerotern"
 	"github.com/yyle88/zaplog"
 	"go.uber.org/zap"
 )
@@ -28,6 +29,10 @@ func main() {
 	var name string
 	flag.StringVar(&name, "name", "", "proto-file-name. example: demo.proto / demo")
 	flag.Parse()
+
+	name = zerotern.VF(name, func() string {
+		return filepath.Base(currentPath)
+	})
 
 	must.Nice(name)
 
