@@ -12,6 +12,7 @@ import (
 	"github.com/barweiss/go-tuple"
 	"github.com/orzkratos/astkratos"
 	"github.com/orzkratos/orzkratos/internal/utils"
+	"github.com/yyle88/eroticgo"
 	"github.com/yyle88/formatgo"
 	"github.com/yyle88/must"
 	"github.com/yyle88/must/mustslice"
@@ -277,20 +278,49 @@ func sortRecvFuncs(oldX *astParam, newX *astParam) {
 		}
 
 		ptx := printgo.NewPTX()
-		startString := syntaxgo_astnode.GetText(oldX.content, syntaxgo_astnode.NewNode(1, astFuncs[0].Pos()))
-		ptx.Println(startString)
+
+		{
+			node := syntaxgo_astnode.NewNode(1, astFuncs[0].Pos())
+			if astFuncs[0].Doc != nil {
+				checkDocPos(astFuncs[0])
+				node.SetEnd(astFuncs[0].Doc.Pos())
+			}
+			startString := syntaxgo_astnode.GetText(oldX.content, node)
+			ptx.Println(startString)
+		}
 
 		var elems []*tuple.T2[*syntaxgo_astnode.Node, string]
 		for sdx, edx, a := 0, 1, astFuncs; edx < len(a); sdx, edx = sdx+1, edx+1 {
-			node := syntaxgo_astnode.NewNode(a[sdx].Pos(), a[edx].Pos())
+			head := a[sdx]
+			next := a[edx]
+			node := syntaxgo_astnode.NewNode(head.Pos(), next.Pos())
+			if head.Doc != nil {
+				checkDocPos(head)
+				node.SetPos(head.Doc.Pos())
+			}
+			if next.Doc != nil {
+				checkDocPos(head)
+				node.SetEnd(next.Doc.Pos())
+			}
+
+			zaplog.SUG.Debugln(eroticgo.BLUE.Sprint(syntaxgo_astnode.GetText(oldX.content, node)))
+
 			elems = append(elems, &tuple.T2[*syntaxgo_astnode.Node, string]{
 				V1: node,
-				V2: a[sdx].Name.Name,
+				V2: head.Name.Name,
 			})
 		}
 		if len(astFuncs) > 0 {
 			astLastFunc := utils.SoftLast(astFuncs)
+
 			node := syntaxgo_astnode.NewNode(astLastFunc.Pos(), token.Pos(1+len(oldX.content)))
+			if astLastFunc.Doc != nil {
+				checkDocPos(astLastFunc)
+				node.SetPos(astLastFunc.Doc.Pos())
+			}
+
+			zaplog.SUG.Debugln(eroticgo.BLUE.Sprint(syntaxgo_astnode.GetText(oldX.content, node)))
+
 			elems = append(elems, &tuple.T2[*syntaxgo_astnode.Node, string]{
 				V1: node,
 				V2: astLastFunc.Name.Name,
@@ -309,6 +339,13 @@ func sortRecvFuncs(oldX *astParam, newX *astParam) {
 
 		newCode, _ := formatgo.FormatBytes(ptx.Bytes())
 		must.Done(os.WriteFile(oldX.path, newCode, 0644))
+	}
+}
+
+func checkDocPos(astFunc *ast.FuncDecl) {
+	if astFunc.Doc != nil {
+		must.True(astFunc.Doc.Pos() < astFunc.Pos())
+		must.True(astFunc.Doc.End() < astFunc.Pos())
 	}
 }
 

@@ -7,6 +7,7 @@ require (
 	github.com/barweiss/go-tuple v1.1.2
 	github.com/orzkratos/astkratos v0.0.2
 	github.com/yyle88/done v1.0.22
+	github.com/yyle88/eroticgo v0.0.3
 	github.com/yyle88/formatgo v1.0.22
 	github.com/yyle88/must v0.0.16
 	github.com/yyle88/neatjson v0.0.11
@@ -16,7 +17,7 @@ require (
 	github.com/yyle88/rese v0.0.3
 	github.com/yyle88/runpath v1.0.23
 	github.com/yyle88/sortslice v1.0.7
-	github.com/yyle88/syntaxgo v0.0.44
+	github.com/yyle88/syntaxgo v0.0.45
 	github.com/yyle88/tern v0.0.5
 	github.com/yyle88/zaplog v0.0.20
 	go.uber.org/zap v1.27.0
@@ -30,7 +31,6 @@ require (
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/yyle88/erero v1.0.18 // indirect
-	github.com/yyle88/eroticgo v0.0.3 // indirect
 	github.com/yyle88/mutexmap v1.0.10 // indirect
 	github.com/yyle88/sure v0.0.36 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
