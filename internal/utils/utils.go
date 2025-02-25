@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"unicode"
 
+	"github.com/yyle88/formatgo"
 	"github.com/yyle88/must"
 	"github.com/yyle88/osexistpath/osomitexist"
 )
@@ -57,11 +58,10 @@ func Clone[V any](org []V) (dst []V) {
 	return dst
 }
 
-func SoftLast[V any](a []V) (v V) {
-	if n := len(a); n > 0 {
-		return a[n-1]
-	}
-	return
+func WriteFormatBytes(data []byte, path string) {
+	code, _ := formatgo.FormatBytes(data)
+	must.Have(code)
+	must.Done(os.WriteFile(path, code, 0644))
 }
 
 func GetProjectPath(currentPath string) (string, string) {

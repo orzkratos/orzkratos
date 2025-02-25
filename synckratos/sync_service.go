@@ -6,16 +6,14 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/barweiss/go-tuple"
 	"github.com/orzkratos/astkratos"
 	"github.com/orzkratos/orzkratos/internal/utils"
 	"github.com/yyle88/eroticgo"
-	"github.com/yyle88/formatgo"
 	"github.com/yyle88/must"
-	"github.com/yyle88/must/mustslice"
 	"github.com/yyle88/neatjson/neatjsons"
 	"github.com/yyle88/osexec"
 	"github.com/yyle88/osexistpath/osmustexist"
@@ -45,14 +43,14 @@ func GenServicesCode(projectRoot string) {
 
 	must.Done(astkratos.WalkFiles(protoVolume, astkratos.NewSuffixMatcher([]string{".proto"}), func(path string, info os.FileInfo) error {
 		zaplog.SUG.Debugln("proto:", path)
-		genServicesOnce(path, defineServiceTypes, projectRoot, oldServiceRoot, newServiceRoot)
+		createServicesOnce(path, defineServiceTypes, projectRoot, oldServiceRoot, newServiceRoot)
 		return nil
 	}))
 
 	if path := newServiceRoot; ossoftexist.IsRoot(path) {
 		zaplog.SUG.Debugln(path)
 
-		replaceSomeProtoGoTypes(path)
+		replaceProtoTypes(path)
 
 		zaplog.SUG.Debugln(path)
 
@@ -78,12 +76,12 @@ func GenServicesOnce(projectRoot string, protoPath string) {
 	oldServiceRoot := filepath.Join(projectRoot, "internal/service")
 	newServiceRoot := filepath.Join(oldServiceRoot, "tmp", time.Now().Format("20060102150405"))
 
-	genServicesOnce(protoPath, defineTypes, projectRoot, oldServiceRoot, newServiceRoot)
+	createServicesOnce(protoPath, defineTypes, projectRoot, oldServiceRoot, newServiceRoot)
 
 	if ossoftexist.IsRoot(newServiceRoot) {
 		zaplog.SUG.Debugln(newServiceRoot)
 
-		replaceSomeProtoGoTypes(newServiceRoot)
+		replaceProtoTypes(newServiceRoot)
 
 		zaplog.SUG.Debugln(newServiceRoot)
 
@@ -93,7 +91,7 @@ func GenServicesOnce(projectRoot string, protoPath string) {
 	}
 }
 
-func genServicesOnce(protoPath string, defineTypes []*astkratos.GrpcTypeDefinition, projectRoot string, oldServiceRoot string, newServiceRoot string) {
+func createServicesOnce(protoPath string, defineTypes []*astkratos.GrpcTypeDefinition, projectRoot string, oldServiceRoot string, newServiceRoot string) {
 	zaplog.LOG.Debug("once")
 	var miss = false
 	var meet = false
@@ -135,25 +133,22 @@ func genServicesOnce(protoPath string, defineTypes []*astkratos.GrpcTypeDefiniti
 	}
 }
 
-func replaceSomeProtoGoTypes(newServiceRoot string) {
+func replaceProtoTypes(newServiceRoot string) {
 	rep := strings.NewReplacer(
 		"pb.google_protobuf_StringValue", "wrapperspb.StringValue", //pb.google_protobuf_StringValue -> wrapperspb.StringValue
 		"pb.google_protobuf_Empty", "emptypb.Empty", //pb.google_protobuf_Empty -> emptypb.Empty
 	)
 
 	must.Done(astkratos.WalkFiles(newServiceRoot, astkratos.NewSuffixMatcher([]string{".go"}), func(path string, info os.FileInfo) error {
-		content := string(rese.V1(os.ReadFile(path)))
-		content = rep.Replace(content)
-
-		newSource := syntaxgo_ast.InjectImports([]byte(content), []string{
-			"google.golang.org/protobuf/types/known/wrapperspb",
-			"google.golang.org/protobuf/types/known/emptypb",
-		})
-
-		//zaplog.SUG.Debugln(string(newSource))
-
-		newSource, _ = formatgo.FormatBytes(newSource)
-		must.Done(os.WriteFile(path, newSource, 0644))
+		srcContent := string(rese.V1(os.ReadFile(path)))
+		newContent := rep.Replace(srcContent)
+		if newContent != srcContent {
+			newSource := syntaxgo_ast.InjectImports([]byte(newContent), []string{
+				"google.golang.org/protobuf/types/known/wrapperspb",
+				"google.golang.org/protobuf/types/known/emptypb",
+			})
+			utils.WriteFormatBytes(newSource, path)
+		}
 		return nil
 	}))
 }
@@ -163,252 +158,267 @@ func rewriteServicesCode(oldServiceRoot string, newServiceRoot string) {
 	zaplog.SUG.Debugln(newServiceRoot)
 
 	must.Done(astkratos.WalkFiles(newServiceRoot, astkratos.NewSuffixMatcher([]string{".go"}), func(path string, info os.FileInfo) error {
-		oldX := collectAstParam(filepath.Join(oldServiceRoot, info.Name()))
-		newX := collectAstParam(path)
+		vOld := parseServiceFile(filepath.Join(oldServiceRoot, info.Name()))
+		vNew := parseServiceFile(path)
 
-		if missCode := calcMissCode(oldX, newX); len(missCode) > 0 {
-			code := []byte((string(oldX.content) + "\n" + missCode))
+		if missingCode := searchMissingMethods(vOld, vNew); len(missingCode) > 0 {
+			changedCode := []byte((string(vOld.code) + "\n" + missingCode))
 
-			newCode, _ := formatgo.FormatBytes(code)
-			must.Done(os.WriteFile(oldX.path, newCode, 0644))
-			oldX = collectAstParam(oldX.path)
+			utils.WriteFormatBytes(changedCode, vOld.path)
+			vOld = parseServiceFile(vOld.path)
 		}
 
-		if code, change := cleanMoreCode(oldX, newX); change {
-			newCode, _ := formatgo.FormatBytes(code)
-			must.Done(os.WriteFile(oldX.path, newCode, 0644))
-			oldX = collectAstParam(oldX.path)
+		if changedCode := notExportUselessMethods(vOld, vNew); len(changedCode) > 0 {
+			utils.WriteFormatBytes(changedCode, vOld.path)
+			vOld = parseServiceFile(vOld.path)
 		}
 
-		sortRecvFuncs(oldX, newX)
+		sortServiceMethods(vOld, vNew)
 		return nil
 	}))
 }
 
-func calcMissCode(oldX *astParam, newX *astParam) string {
-	ptx2miss := printgo.NewPTX()
-	for structName, newStructParam := range newX.mapStructParams {
+// 当开发者在 proto 里增加函数时，这个函数能够识别服务代码中缺失的方法代码
+func searchMissingMethods(old *ServiceFile, new *ServiceFile) string {
+	ptx := printgo.NewPTX()
+	for structName, temp := range new.serviceStructsMap {
 		zaplog.SUG.Debugln("-")
-		zaplog.SUG.Debugln(newX.GetNode(newStructParam.structType))
+		zaplog.SUG.Debugln(new.GetNode(temp.structType))
 		zaplog.SUG.Debugln("-")
 
-		if ot, ok := oldX.mapStructParams[structName]; !ok {
-			ptx2miss.Println(newX.GetStructNode(structName))
-			recvFuncs := newX.mapStructParams[structName].recvFuncs
-			for _, astFunc := range recvFuncs {
-				ptx2miss.Println(newX.GetNode(astFunc))
+		serviceStruct, ok := old.serviceStructsMap[structName]
+		if !ok {
+			ptx.Println(new.GetStructNode(structName))
+			methods := new.serviceStructsMap[structName].methods
+			for _, method := range methods {
+				ptx.Println(new.GetNode(method))
 			}
-		} else {
-			astFuncs := newX.mapStructParams[structName].recvFuncs
-			for _, astFunc := range astFuncs {
-				if oldFunc, ok := ot.recvFuncsMap[astFunc.Name.Name]; !ok {
-					zaplog.SUG.Debugln("miss", astFunc.Name.Name)
-					ptx2miss.Println(newX.GetNode(astFunc))
-				} else {
-					zaplog.SUG.Debugln("meet", oldFunc.Name.Name)
-				}
+			continue
+		}
+		methods := new.serviceStructsMap[structName].methods
+		for _, method := range methods {
+			oldMethod, ok := serviceStruct.methodsMap[method.Name.Name]
+			if !ok {
+				zaplog.SUG.Debugln("missing", method.Name.Name)
+				ptx.Println(new.GetNode(method))
+				continue
 			}
+			zaplog.SUG.Debugln("existing", oldMethod.Name.Name)
 		}
 	}
-	missCode := strings.TrimSpace(ptx2miss.String())
-	return missCode
+	missingCode := strings.TrimSpace(ptx.String())
+	return missingCode
 }
 
-func cleanMoreCode(oldX *astParam, newX *astParam) ([]byte, bool) {
-	var moreFuncs []*ast.FuncDecl
-	for structName, newStructParam := range oldX.mapStructParams {
+// 当开发者删除 proto 中某个函数时，这个函数能自动把被删除的函数转换为非导出的
+func notExportUselessMethods(old *ServiceFile, new *ServiceFile) []byte {
+	var uselessMethods []*ast.FuncDecl
+	for structName, temp := range old.serviceStructsMap {
 		zaplog.SUG.Debugln("-")
-		zaplog.SUG.Debugln(oldX.GetNode(newStructParam.structType))
+		zaplog.SUG.Debugln(old.GetNode(temp.structType))
 		zaplog.SUG.Debugln("-")
-		recvFuncs := oldX.mapStructParams[structName].recvFuncs
+		oldMethods := old.serviceStructsMap[structName].methods
 
-		if nt, ok := newX.mapStructParams[structName]; !ok {
-			moreFuncs = append(moreFuncs, recvFuncs...)
-		} else {
-			for _, astFunc := range recvFuncs {
-				if oldFunc, ok := nt.recvFuncsMap[astFunc.Name.Name]; !ok {
-					zaplog.SUG.Debugln("more", astFunc.Name.Name)
-					moreFuncs = append(moreFuncs, astFunc)
-				} else {
-					zaplog.SUG.Debugln("meet", oldFunc.Name.Name)
-				}
+		//假如新服务里没有某个类型，则这个类型下的所有方法都应该是非导出的
+		serviceStruct, ok := new.serviceStructsMap[structName]
+		if !ok {
+			uselessMethods = append(uselessMethods, oldMethods...)
+			continue
+		}
+
+		for _, method := range oldMethods {
+			newMethod, ok := serviceStruct.methodsMap[method.Name.Name]
+			if !ok {
+				zaplog.SUG.Debugln("useless", method.Name.Name)
+				uselessMethods = append(uselessMethods, method) //假如新服务里没有这个方法则它也该是非导出的
+				continue
 			}
+			zaplog.SUG.Debugln("matching", newMethod.Name.Name)
 		}
 	}
-
-	if len(moreFuncs) == 0 {
-		return oldX.content, false
-	} else {
-		var source = utils.Clone(oldX.content)
-		for _, missFunc := range moreFuncs {
-			name := missFunc.Name.Name
-			zaplog.SUG.Debugln("more", name)
-			if utils.C0IsUpper(name) {
-				newName := []byte(utils.CvtC0Lower(name))
-				oldName := syntaxgo_astnode.GetCode(source, missFunc.Name)
-				must.Same(len(newName), len(oldName))
-				copy(oldName, newName)
-			}
-		}
-		mustslice.Different(source, oldX.content)
-		return source, true
+	if len(uselessMethods) == 0 {
+		return []byte{}
 	}
+
+	var source = utils.Clone(old.code)
+	var change = false //结果是否改变，假如没有替换的就不用写回文件，能提升性能
+	for _, method := range uselessMethods {
+		name := method.Name.Name
+		zaplog.SUG.Debugln("useless", name)
+		if utils.C0IsUpper(name) {
+			newName := []byte(utils.CvtC0Lower(name))
+			oldName := syntaxgo_astnode.GetCode(source, method.Name)
+			must.Same(len(newName), len(oldName))
+			copy(oldName, newName) //这里由于长度相同，因此可以直接复制在相同的位置，就算是大功告成啦
+			change = true
+		}
+	}
+	if change {
+		return source
+	}
+	return []byte{}
 }
 
+// 这个函数的目的是：当proto文件里调整了函数的顺序，则在service代码里也自动调整函数顺序，这个符合开发者的预期
 // 思路基本是这样的：首先拿到所有的函数，其次过滤出有用的函数
 // 把有用的函数以及它下面的无用部分看做整块代码，直到下个有用的函数为止的范围都是代码块
 // 这个代码块，有1个函数名称，按照这个名称排序即可
-func sortRecvFuncs(oldX *astParam, newX *astParam) {
-	for structName, newStructParam := range newX.mapStructParams {
+func sortServiceMethods(old *ServiceFile, new *ServiceFile) {
+	for structName, newServiceStruct := range new.serviceStructsMap {
 		zaplog.SUG.Debugln("-")
-		zaplog.SUG.Debugln(newX.GetNode(newStructParam.structType))
+		zaplog.SUG.Debugln(new.GetNode(newServiceStruct.structType))
 		zaplog.SUG.Debugln("-")
-		oldStructParam, ok := oldX.mapStructParams[structName]
+
+		//找到旧服务的结构体，由于新服务是个壳，旧服务是实现了业务的代码，因此旧服务的同名结构体一定存在
+		oldStructParam, ok := old.serviceStructsMap[structName]
 		must.True(ok)
 
-		var astFuncs []*ast.FuncDecl
-		for _, astFunc := range oldStructParam.recvFuncs {
-			_, ok := newStructParam.recvFuncsMap[astFunc.Name.Name]
+		//这里是旧服务的方法列表，需要根据新文件的索引，把旧文件重新编排，因此首先是收集有效的旧方法列表
+		var methods []*ast.FuncDecl
+		for _, fun := range oldStructParam.methods {
+			_, ok := newServiceStruct.methodsMap[fun.Name.Name]
 			if ok {
-				astFuncs = append(astFuncs, astFunc)
+				methods = append(methods, fun)
 			}
 		}
-		if len(astFuncs) == 0 {
-			return
+		if len(methods) == 0 {
+			return //假如啥都没有，也就不用排序啦，其实也可更严格些比如 len < 2 时，也是不用排序的，但不要这么做以免影响调试效果
 		}
 
 		ptx := printgo.NewPTX()
 
-		{
-			node := syntaxgo_astnode.NewNode(1, astFuncs[0].Pos())
-			if astFuncs[0].Doc != nil {
-				checkDocPos(astFuncs[0])
-				node.SetEnd(astFuncs[0].Doc.Pos())
-			}
-			startString := syntaxgo_astnode.GetText(oldX.content, node)
-			ptx.Println(startString)
+		//首先是第一个方法前的代码块，即头部块，比如包名+引用+定义结构体+初始化逻辑等等
+		headNode := syntaxgo_astnode.NewNode(1, methods[0].Pos())
+		if methods[0].Doc != nil {
+			checkDocPos(methods[0])
+			headNode.SetEnd(methods[0].Doc.Pos()) //假如方法有注释，就截取到注释以前的部分
+		}
+		ptx.Println(syntaxgo_astnode.GetText(old.code, headNode))
+
+		type MethodBlock struct {
+			Node *syntaxgo_astnode.Node
+			Name string
 		}
 
-		var elems []*tuple.T2[*syntaxgo_astnode.Node, string]
-		for sdx, edx, a := 0, 1, astFuncs; edx < len(a); sdx, edx = sdx+1, edx+1 {
-			head := a[sdx]
-			next := a[edx]
-			node := syntaxgo_astnode.NewNode(head.Pos(), next.Pos())
-			if head.Doc != nil {
-				checkDocPos(head)
-				node.SetPos(head.Doc.Pos())
-			}
-			if next.Doc != nil {
-				checkDocPos(head)
-				node.SetEnd(next.Doc.Pos())
+		//接下来是每个方法的代码块，这个方法块可能不止单个方法的代码，还有可能会包含其它自定义的代码
+		//由于只是筛选出新服务中有的方法，因此相邻两个方法中间还有其它代码，让代码归属于前面的方法块
+		//例如，新服务只有 A 和 B 两个方法，而旧服务有 A F B 三个方法，则 A和F 是一块， B 是一块
+		var methodBlocks = make([]*MethodBlock, 0, len(methods))
+		for idx, method := range methods {
+			node := syntaxgo_astnode.NewNode(method.Pos(), token.Pos(1+len(old.code)))
+			if method.Doc != nil {
+				checkDocPos(method)
+				node.SetPos(method.Doc.Pos()) //假如有注释，则代码块的起始位置应该是注释的位置
 			}
 
-			zaplog.SUG.Debugln(eroticgo.BLUE.Sprint(syntaxgo_astnode.GetText(oldX.content, node)))
+			if edx := idx + 1; edx < len(methods) {
+				nextFn := methods[edx]
+				node.SetEnd(nextFn.Pos()) //第二个函数的起始位置，就是第一个函数的结束位置
+				if nextFn.Doc != nil {
+					checkDocPos(nextFn)
+					node.SetEnd(nextFn.Doc.Pos()) //第二个函数的注释起始位置，就是第一个函数的结束位置
+				}
+			}
 
-			elems = append(elems, &tuple.T2[*syntaxgo_astnode.Node, string]{
-				V1: node,
-				V2: head.Name.Name,
+			zaplog.SUG.Debugln(eroticgo.BLUE.Sprint(syntaxgo_astnode.GetText(old.code, node)))
+
+			methodBlocks = append(methodBlocks, &MethodBlock{
+				Node: node,
+				Name: method.Name.Name,
 			})
 		}
-		if len(astFuncs) > 0 {
-			astLastFunc := utils.SoftLast(astFuncs)
+		must.Same(len(methods), len(methodBlocks))
 
-			node := syntaxgo_astnode.NewNode(astLastFunc.Pos(), token.Pos(1+len(oldX.content)))
-			if astLastFunc.Doc != nil {
-				checkDocPos(astLastFunc)
-				node.SetPos(astLastFunc.Doc.Pos())
-			}
-
-			zaplog.SUG.Debugln(eroticgo.BLUE.Sprint(syntaxgo_astnode.GetText(oldX.content, node)))
-
-			elems = append(elems, &tuple.T2[*syntaxgo_astnode.Node, string]{
-				V1: node,
-				V2: astLastFunc.Name.Name,
-			})
+		compareLess := func(i, j int) bool {
+			a := methodBlocks[i]
+			b := methodBlocks[j]
+			idxA := newServiceStruct.methodsIdx[a.Name] //在新文件中的序号-假如用户调整proto的函数顺序，则新文件序号会自动调整
+			idxB := newServiceStruct.methodsIdx[b.Name] //在新文件中的序号
+			return idxA < idxB
+		}
+		if sort.SliceIsSorted(methodBlocks, compareLess) {
+			return //假如已经是有序的，就没必要再排序，这样也能提升性能
 		}
 
-		must.Same(len(astFuncs), len(elems))
+		sortslice.SortByIndex(methodBlocks, compareLess)
 
-		sortslice.SortIStable(elems, func(i, j int) bool {
-			return newStructParam.idxAstFuncs[elems[i].V2] < newStructParam.idxAstFuncs[elems[j].V2]
-		})
-		for _, elem := range elems {
-			nodeString := syntaxgo_astnode.GetText(oldX.content, elem.V1)
-			ptx.Println(nodeString)
+		//把排序后的代码拼接起来
+		for _, methodBlock := range methodBlocks {
+			ptx.Println(syntaxgo_astnode.GetText(old.code, methodBlock.Node))
 		}
 
-		newCode, _ := formatgo.FormatBytes(ptx.Bytes())
-		must.Done(os.WriteFile(oldX.path, newCode, 0644))
+		//把代码格式化再写回文件
+		utils.WriteFormatBytes(ptx.Bytes(), old.path)
 	}
 }
 
-func checkDocPos(astFunc *ast.FuncDecl) {
-	if astFunc.Doc != nil {
-		must.True(astFunc.Doc.Pos() < astFunc.Pos())
-		must.True(astFunc.Doc.End() < astFunc.Pos())
+func checkDocPos(fun *ast.FuncDecl) {
+	if fun.Doc != nil {
+		must.True(fun.Doc.Pos() < fun.Pos())
+		must.True(fun.Doc.End() < fun.Pos())
 	}
 }
 
-func collectAstParam(path string) *astParam {
-	content := rese.V1(os.ReadFile(path))
-	astBundle := rese.P1(syntaxgo_ast.NewAstBundleV1(content))
+func parseServiceFile(path string) *ServiceFile {
+	code := rese.V1(os.ReadFile(path))
+	astBundle := rese.P1(syntaxgo_ast.NewAstBundleV1(code))
 	astFile, _ := astBundle.GetBundle()
 
 	structTypes := syntaxgo_search.MapStructTypesByName(astFile)
 	zaplog.SUG.Debugln(len(structTypes))
 
-	var mapStructParams = make(map[string]*astStructParam, len(structTypes))
+	var serviceStructsMap = make(map[string]*ServiceStruct, len(structTypes))
 	for structName, structType := range structTypes {
 		zaplog.SUG.Debugln(structName)
 		zaplog.SUG.Debugln("-")
-		zaplog.SUG.Debugln(syntaxgo_astnode.GetText(content, structType))
+		zaplog.SUG.Debugln(syntaxgo_astnode.GetText(code, structType))
 		zaplog.SUG.Debugln("-")
 
-		astFuncs := syntaxgo_search.FindFunctionsByReceiverName(astFile, structName, true)
+		methods := syntaxgo_search.FindFunctionsByReceiverName(astFile, structName, true)
 		zaplog.SUG.Debugln("-")
-		for _, astFunc := range astFuncs {
-			zaplog.SUG.Debugln(astFunc.Name.Name)
+		for _, fun := range methods {
+			zaplog.SUG.Debugln(fun.Name.Name)
 		}
 		zaplog.SUG.Debugln("-")
 
-		var mapAstFuncs = make(map[string]*ast.FuncDecl, len(astFuncs))
-		var idxAstFuncs = make(map[string]int, len(astFuncs))
-		for idx, astFunc := range astFuncs {
-			mapAstFuncs[astFunc.Name.Name] = astFunc
-			idxAstFuncs[astFunc.Name.Name] = idx
+		var methodsMap = make(map[string]*ast.FuncDecl, len(methods))
+		var methodsIdx = make(map[string]int, len(methods))
+		for idx, fun := range methods {
+			methodsMap[fun.Name.Name] = fun
+			methodsIdx[fun.Name.Name] = idx
 		}
 
-		mapStructParams[structName] = &astStructParam{
-			structType:   structType,
-			recvFuncs:    astFuncs,
-			recvFuncsMap: mapAstFuncs,
-			idxAstFuncs:  idxAstFuncs,
+		serviceStructsMap[structName] = &ServiceStruct{
+			structType: structType,
+			methods:    methods,
+			methodsMap: methodsMap,
+			methodsIdx: methodsIdx,
 		}
 	}
-	return &astParam{
-		path:            path,
-		content:         content,
-		mapStructParams: mapStructParams,
+	return &ServiceFile{
+		path:              path,
+		code:              code,
+		serviceStructsMap: serviceStructsMap,
 	}
 }
 
-type astParam struct {
-	path            string
-	content         []byte
-	mapStructParams map[string]*astStructParam
+type ServiceFile struct {
+	path              string
+	code              []byte
+	serviceStructsMap map[string]*ServiceStruct
 }
 
-func (x *astParam) GetNode(astNode ast.Node) string {
-	return syntaxgo_astnode.GetText(x.content, astNode)
+func (x *ServiceFile) GetNode(astNode ast.Node) string {
+	return syntaxgo_astnode.GetText(x.code, astNode)
 }
 
-func (x *astParam) GetStructNode(structName string) string {
-	return syntaxgo_astnode.GetText(x.content, x.mapStructParams[structName].structType)
+func (x *ServiceFile) GetStructNode(structName string) string {
+	return syntaxgo_astnode.GetText(x.code, x.serviceStructsMap[structName].structType)
 }
 
-type astStructParam struct {
-	structType   *ast.StructType
-	recvFuncs    []*ast.FuncDecl
-	recvFuncsMap map[string]*ast.FuncDecl
-	idxAstFuncs  map[string]int
+type ServiceStruct struct {
+	structType *ast.StructType
+	methods    []*ast.FuncDecl
+	methodsMap map[string]*ast.FuncDecl
+	methodsIdx map[string]int
 }
