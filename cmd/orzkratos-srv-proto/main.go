@@ -9,9 +9,9 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/orzkratos/orzkratos/internal/utils"
+	"github.com/orzkratos/orzkratos/synckratos"
 	"github.com/yyle88/done"
 	"github.com/yyle88/must"
-	"github.com/yyle88/osexec"
 	"github.com/yyle88/rese"
 	"github.com/yyle88/tern"
 	"github.com/yyle88/tern/zerotern"
@@ -33,27 +33,29 @@ func main() {
 	flag.StringVar(&protoName, "name", "", "proto-file-name. example: demo.proto / demo")
 	flag.Parse()
 
-	protoName = zerotern.VF(protoName, func() string {
-		return filepath.Base(currentPath)
-	})
-	must.Nice(protoName)
-	zaplog.LOG.Debug("protoName:", zap.String("protoName", protoName))
+	if protoName != "" {
+		protoName = zerotern.VF(protoName, func() string {
+			return filepath.Base(currentPath)
+		})
+		must.Nice(protoName)
+		zaplog.LOG.Debug("protoName:", zap.String("protoName", protoName))
 
-	protoPath := tern.BVF(strings.HasSuffix(protoName, ".proto"), protoName, func() string {
-		return protoName + ".proto"
-	})
-	protoPath = filepath.Join(shortMiddle, protoPath)
-	zaplog.LOG.Debug("protoPath:", zap.String("protoPath", protoPath))
+		protoPath := tern.BVF(strings.HasSuffix(protoName, ".proto"), protoName, func() string {
+			return protoName + ".proto"
+		})
+		protoPath = filepath.Join(shortMiddle, protoPath)
+		zaplog.LOG.Debug("protoPath:", zap.String("protoPath", protoPath))
 
-	msg := fmt.Sprintf("cd %s && kratos proto add %s", projectPath, protoPath)
-	zaplog.SUG.Debugln(msg)
-	if !chooseConfirm("execute kratos proto add?") {
-		return
+		if !chooseConfirm("execute sync kratos service once?") {
+			return
+		}
+		synckratos.GenServicesOnce(projectPath, protoPath)
+	} else {
+		if !chooseConfirm("execute sync kratos service code?") {
+			return
+		}
+		synckratos.GenServicesCode(projectPath)
 	}
-
-	// "kratos proto add api/helloworld/demo.proto"
-	output := rese.V1(osexec.ExecInPath(projectPath, "kratos", "proto", "add", protoPath))
-	zaplog.SUG.Debugln(string(output))
 }
 
 func chooseConfirm(msg string) bool {
