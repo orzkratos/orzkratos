@@ -29,9 +29,11 @@ import (
 )
 
 func GenServicesCode(projectRoot string) {
+	zaplog.LOG.Debug("gen-services-code", zap.String("project", projectRoot))
+
 	protoVolume := filepath.Join(projectRoot, "api")
 	serviceTypes := astkratos.ListGrpcServices(protoVolume)
-	zaplog.SUG.Debugln("service-types:", neatjsons.S(serviceTypes))
+	zaplog.SUG.Debugln("service-types:", eroticgo.BLUE.Sprint(neatjsons.S(serviceTypes)))
 
 	oldServiceRoot := filepath.Join(projectRoot, "internal/service")
 	newServiceTemp := filepath.Join(oldServiceRoot, "tmp")
@@ -51,18 +53,24 @@ func GenServicesCode(projectRoot string) {
 	writeServiceCode(oldServiceRoot, newServiceRoot)
 
 	if path := newServiceTemp; ossoftexist.IsRoot(newServiceTemp) {
-		if rese.V1(utils.CntFileNum(path)) == 0 {
+		if rese.V1(utils.CountFiles(path)) == 0 {
 			must.Done(os.RemoveAll(path)) //结束以后要删除这个多余的目录
 		}
 	}
+
+	zaplog.SUG.Debugln("gen-services-code", "success.")
+	eroticgo.GREEN.ShowMessage("SUCCESS")
+	zaplog.SUG.Debugln("gen-services-code", "success.")
 }
 
 func GenServicesOnce(projectRoot string, protoPath string) {
+	zaplog.LOG.Debug("gen-services-once", zap.String("project", projectRoot), zap.String("proto", protoPath))
+
 	osmustexist.MustRoot(projectRoot)
 	osmustexist.MustFile(protoPath)
 	protoVolume := filepath.Dir(protoPath)
 	serviceTypes := astkratos.ListGrpcServices(protoVolume)
-	zaplog.SUG.Debugln("service-types:", neatjsons.S(serviceTypes))
+	zaplog.SUG.Debugln("service-types:", eroticgo.BLUE.Sprint(neatjsons.S(serviceTypes)))
 
 	oldServiceRoot := filepath.Join(projectRoot, "internal/service")
 	newServiceRoot := filepath.Join(oldServiceRoot, "tmp", time.Now().Format("20060102150405"))
@@ -76,6 +84,10 @@ func GenServicesOnce(projectRoot string, protoPath string) {
 	})
 
 	writeServiceCode(oldServiceRoot, newServiceRoot)
+
+	zaplog.SUG.Debugln("gen-services-once", "success.")
+	eroticgo.GREEN.ShowMessage("SUCCESS")
+	zaplog.SUG.Debugln("gen-services-once", "success.")
 }
 
 type createNewServiceParam struct {
@@ -254,7 +266,7 @@ func notExportSomeMethods(old *ServiceFile, new *ServiceFile) []byte {
 		return []byte{}
 	}
 
-	var source = utils.Clone(old.code)
+	var source = utils.CloneBytes(old.code)
 	var change = false //结果是否改变，假如没有替换的就不用写回文件，能提升性能
 	for _, method := range uselessMethods {
 		name := method.Name.Name

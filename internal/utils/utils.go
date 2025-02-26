@@ -5,27 +5,28 @@ import (
 	"path/filepath"
 	"unicode"
 
+	"github.com/yyle88/erero"
 	"github.com/yyle88/formatgo"
 	"github.com/yyle88/must"
 	"github.com/yyle88/osexistpath/osomitexist"
 )
 
-func CntFileNum(root string) (fileNum int64, err error) {
-	err = Files(root, func(path string, info os.FileInfo) error {
-		fileNum++
+func CountFiles(root string) (count int64, err error) {
+	err = WalkFiles(root, func(path string, info os.FileInfo) error {
+		count++
 		return nil
 	})
 	if err != nil {
-		return 0, err
+		return 0, erero.Wro(err)
 	}
-	return fileNum, nil
+	return count, nil
 }
 
-func Files(root string, run func(path string, info os.FileInfo) error) (err error) {
+func WalkFiles(root string, run func(path string, info os.FileInfo) error) (err error) {
 	err = filepath.Walk(root,
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
-				return err
+				return erero.Wro(err)
 			}
 			if info.IsDir() {
 				return nil
@@ -33,7 +34,10 @@ func Files(root string, run func(path string, info os.FileInfo) error) (err erro
 			return run(path, info)
 		},
 	)
-	return err
+	if err != nil {
+		return erero.Wro(err)
+	}
+	return nil
 }
 
 func C0IsUpper(s string) bool {
@@ -52,8 +56,8 @@ func CvtC0Lower(s string) string {
 	return string(runes)
 }
 
-func Clone[V any](org []V) (dst []V) {
-	dst = make([]V, len(org)) //看来得提前分配空间否则不能拷贝
+func CloneBytes(org []byte) (dst []byte) {
+	dst = make([]byte, len(org)) //看来得提前分配空间否则不能拷贝
 	copy(dst, org)
 	return dst
 }
