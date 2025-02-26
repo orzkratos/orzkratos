@@ -27,7 +27,7 @@ func main() {
 	zaplog.LOG.Debug("execute:", zap.String("path", executePath))
 
 	projectPath, shortMiddle := utils.GetProjectPath(currentPath)
-	zaplog.LOG.Debug("project:", zap.String("projectPath", projectPath), zap.String("shortMiddle", shortMiddle))
+	zaplog.LOG.Debug("project:", zap.String("path", projectPath))
 
 	var protoName string
 	flag.StringVar(&protoName, "name", "", "proto-file-name. example: demo.proto / demo")

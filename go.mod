@@ -4,8 +4,7 @@ go 1.22.8
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
-	github.com/barweiss/go-tuple v1.1.2
-	github.com/orzkratos/astkratos v0.0.2
+	github.com/orzkratos/astkratos v0.0.3
 	github.com/yyle88/done v1.0.22
 	github.com/yyle88/eroticgo v0.0.3
 	github.com/yyle88/formatgo v1.0.22

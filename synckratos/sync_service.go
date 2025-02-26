@@ -25,39 +25,29 @@ import (
 	"github.com/yyle88/syntaxgo/syntaxgo_astnode"
 	"github.com/yyle88/syntaxgo/syntaxgo_search"
 	"github.com/yyle88/zaplog"
-	"go.uber.org/zap"
 )
 
 func GenServicesCode(projectRoot string) {
 	protoVolume := filepath.Join(projectRoot, "api")
-	defineServiceTypes := astkratos.ListGrpcServices(protoVolume)
-	if len(defineServiceTypes) > 0 {
-		zaplog.SUG.Debugln(neatjsons.S(defineServiceTypes))
-	} else {
-		zaplog.SUG.Debugln("maybe no service in protos")
-	}
+	serviceTypes := astkratos.ListGrpcServices(protoVolume)
+	zaplog.SUG.Debugln("service-types:", neatjsons.S(serviceTypes))
 
 	oldServiceRoot := filepath.Join(projectRoot, "internal/service")
 	newServiceTemp := filepath.Join(oldServiceRoot, "tmp")
 	newServiceRoot := filepath.Join(newServiceTemp, time.Now().Format("20060102150405"))
 
-	must.Done(astkratos.WalkFiles(protoVolume, astkratos.NewSuffixMatcher([]string{".proto"}), func(path string, info os.FileInfo) error {
-		zaplog.SUG.Debugln("proto:", path)
-		createServicesOnce(path, defineServiceTypes, projectRoot, oldServiceRoot, newServiceRoot)
+	must.Done(astkratos.WalkFiles(protoVolume, astkratos.NewSuffixMatcher([]string{".proto"}), func(protoPath string, info os.FileInfo) error {
+		createNewService(&createNewServiceParam{
+			ProjectRoot:    projectRoot,
+			ProtoPath:      protoPath,
+			ServiceTypes:   serviceTypes,
+			OldServiceRoot: oldServiceRoot,
+			NewServiceRoot: newServiceRoot,
+		})
 		return nil
 	}))
 
-	if path := newServiceRoot; ossoftexist.IsRoot(path) {
-		zaplog.SUG.Debugln(path)
-
-		replaceProtoTypes(path)
-
-		zaplog.SUG.Debugln(path)
-
-		rewriteServicesCode(oldServiceRoot, path) //根据接口定义重新调整service代码内容，把缺少的补全出来，把多余的变成小写的
-
-		must.Done(os.RemoveAll(path)) //结束以后要删除这个多余的目录
-	}
+	writeServiceCode(oldServiceRoot, newServiceRoot)
 
 	if path := newServiceTemp; ossoftexist.IsRoot(newServiceTemp) {
 		if rese.V1(utils.CntFileNum(path)) == 0 {
@@ -70,70 +60,89 @@ func GenServicesOnce(projectRoot string, protoPath string) {
 	osmustexist.MustRoot(projectRoot)
 	osmustexist.MustFile(protoPath)
 	protoVolume := filepath.Dir(protoPath)
-	defineTypes := astkratos.ListGrpcServices(protoVolume)
-	zaplog.SUG.Debugln(neatjsons.S(defineTypes))
+	serviceTypes := astkratos.ListGrpcServices(protoVolume)
+	zaplog.SUG.Debugln("service-types:", neatjsons.S(serviceTypes))
 
 	oldServiceRoot := filepath.Join(projectRoot, "internal/service")
 	newServiceRoot := filepath.Join(oldServiceRoot, "tmp", time.Now().Format("20060102150405"))
 
-	createServicesOnce(protoPath, defineTypes, projectRoot, oldServiceRoot, newServiceRoot)
+	createNewService(&createNewServiceParam{
+		ProjectRoot:    projectRoot,
+		ProtoPath:      protoPath,
+		ServiceTypes:   serviceTypes,
+		OldServiceRoot: oldServiceRoot,
+		NewServiceRoot: newServiceRoot,
+	})
 
-	if ossoftexist.IsRoot(newServiceRoot) {
-		zaplog.SUG.Debugln(newServiceRoot)
-
-		replaceProtoTypes(newServiceRoot)
-
-		zaplog.SUG.Debugln(newServiceRoot)
-
-		rewriteServicesCode(oldServiceRoot, newServiceRoot)
-		//结束以后要删除这个多余的目录
-		must.Done(os.RemoveAll(newServiceRoot))
-	}
+	writeServiceCode(oldServiceRoot, newServiceRoot)
 }
 
-func createServicesOnce(protoPath string, defineTypes []*astkratos.GrpcTypeDefinition, projectRoot string, oldServiceRoot string, newServiceRoot string) {
-	zaplog.LOG.Debug("once")
-	var miss = false
-	var meet = false
+type createNewServiceParam struct {
+	ProjectRoot    string
+	ProtoPath      string
+	ServiceTypes   []*astkratos.GrpcTypeDefinition
+	OldServiceRoot string
+	NewServiceRoot string
+}
 
-	protoCode := string(rese.V1(os.ReadFile(protoPath)))
-	for _, c := range defineTypes {
-		must.OK(c.Name)
-		defineService := fmt.Sprintf("service %s {", c.Name)
-		zaplog.SUG.Debugln(defineService)
-		if strings.Contains(protoCode, defineService) {
-			if !ossoftexist.IsFile(filepath.Join(projectRoot, "internal/service", strings.ToLower(c.Name)+".go")) {
-				zaplog.SUG.Debugln("meet:", defineService, "miss:", c.Name)
-				miss = true
-			} else {
-				zaplog.SUG.Debugln("meet:", defineService, "have:", c.Name)
-				meet = true
-			}
+func createNewService(param *createNewServiceParam) {
+	zaplog.SUG.Debugln("create-new-service-param:", neatjsons.S(param))
+	var missing = false
+	var meeting = false
+
+	protoCode := string(rese.V1(os.ReadFile(param.ProtoPath)))
+	for _, serviceType := range param.ServiceTypes {
+		must.OK(serviceType.Name)
+		zaplog.SUG.Debugln("check-service-in-proto:", serviceType.Name, "path:", param.ProtoPath)
+
+		if !strings.Contains(protoCode, fmt.Sprintf("service %s {", serviceType.Name)) {
+			zaplog.SUG.Debugln("service-not-in-proto")
+			continue
+		}
+		zaplog.SUG.Debugln("check-service-existing:", serviceType.Name)
+
+		if !ossoftexist.IsFile(filepath.Join(param.ProjectRoot, "internal/service", strings.ToLower(serviceType.Name)+".go")) {
+			zaplog.SUG.Debugln("missing:", serviceType.Name)
+			missing = true
+		} else {
+			zaplog.SUG.Debugln("meeting:", serviceType.Name)
+			meeting = true
 		}
 	}
-	//只要有1个 service 是 miss 的就新建服务
-	if miss {
-		zaplog.LOG.Debug("miss")
-		startTime := time.Now()
 
-		out := rese.V1(osexec.ExecInPath(projectRoot, "kratos", "proto", "server", protoPath, "-t", oldServiceRoot))
-		zaplog.SUG.Debugln(string(out))
-		zaplog.LOG.Debug("miss-done", zap.Duration("duration", time.Since(startTime)))
+	zaplog.SUG.Debugln("check-service", "meeting:", meeting, "missing:", missing)
+
+	//只要有1个 service 是 missing 的就新建服务
+	if missing {
+		zaplog.SUG.Debugln("create-service-in-path:", param.OldServiceRoot)
+		out := rese.V1(osexec.ExecInPath(param.ProjectRoot, "kratos", "proto", "server", param.ProtoPath, "-t", param.OldServiceRoot))
+		zaplog.SUG.Debugln("output:", string(out))
 	}
-	//只要有1个 service 是 meet 的就重建服务和检查服务，看看是不是需要更新代码
+	//只要有1个 service 是 meeting 的就重建服务和检查服务，看看是不是需要更新代码
 	//注意，这块逻辑要放在新建逻辑的后面，以确保重写时服务已经存在
-	if meet {
-		zaplog.LOG.Debug("meet")
-		startTime := time.Now()
+	if meeting {
+		zaplog.SUG.Debugln("create-service-in-path:", param.NewServiceRoot)
+		must.Done(os.MkdirAll(param.NewServiceRoot, 0755))
+		out := rese.V1(osexec.ExecInPath(param.ProjectRoot, "kratos", "proto", "server", param.ProtoPath, "-t", param.NewServiceRoot))
+		zaplog.SUG.Debugln("output:", string(out))
+	}
+	zaplog.SUG.Debugln("return")
+}
 
-		must.Done(os.MkdirAll(newServiceRoot, 0755))
-		out := rese.V1(osexec.ExecInPath(projectRoot, "kratos", "proto", "server", protoPath, "-t", newServiceRoot))
-		zaplog.SUG.Debugln(string(out))
-		zaplog.LOG.Debug("meet-done", zap.Duration("duration", time.Since(startTime)))
+func writeServiceCode(oldServiceRoot string, newServiceRoot string) {
+	if path := newServiceRoot; ossoftexist.IsRoot(path) {
+		//替换引用
+		replaceProtoImports(path)
+
+		//同步代码
+		syncServicesCode(oldServiceRoot, path)
+
+		//结束以后要删除这个多余的目录
+		must.Done(os.RemoveAll(path))
 	}
 }
 
-func replaceProtoTypes(newServiceRoot string) {
+func replaceProtoImports(newServiceRoot string) {
 	rep := strings.NewReplacer(
 		"pb.google_protobuf_StringValue", "wrapperspb.StringValue", //pb.google_protobuf_StringValue -> wrapperspb.StringValue
 		"pb.google_protobuf_Empty", "emptypb.Empty", //pb.google_protobuf_Empty -> emptypb.Empty
@@ -153,13 +162,20 @@ func replaceProtoTypes(newServiceRoot string) {
 	}))
 }
 
-func rewriteServicesCode(oldServiceRoot string, newServiceRoot string) {
-	zaplog.SUG.Debugln(oldServiceRoot)
-	zaplog.SUG.Debugln(newServiceRoot)
+func syncServicesCode(oldServiceRoot string, newServiceRoot string) {
+	zaplog.SUG.Debugln("sync-services-code", "old-service-root:", oldServiceRoot)
+	zaplog.SUG.Debugln("sync-services-code", "new-service-root:", newServiceRoot)
 
 	must.Done(astkratos.WalkFiles(newServiceRoot, astkratos.NewSuffixMatcher([]string{".go"}), func(path string, info os.FileInfo) error {
+		zaplog.SUG.Debugln("-")
+		zaplog.SUG.Debugln("parse", "OLD", info.Name())
 		vOld := parseServiceFile(filepath.Join(oldServiceRoot, info.Name()))
+		zaplog.SUG.Debugln("-")
+
+		zaplog.SUG.Debugln("-")
+		zaplog.SUG.Debugln("parse", "NEW", info.Name())
 		vNew := parseServiceFile(path)
+		zaplog.SUG.Debugln("-")
 
 		if missingCode := searchMissingMethods(vOld, vNew); len(missingCode) > 0 {
 			changedCode := []byte((string(vOld.code) + "\n" + missingCode))
@@ -168,7 +184,7 @@ func rewriteServicesCode(oldServiceRoot string, newServiceRoot string) {
 			vOld = parseServiceFile(vOld.path)
 		}
 
-		if changedCode := notExportUselessMethods(vOld, vNew); len(changedCode) > 0 {
+		if changedCode := notExportSomeMethods(vOld, vNew); len(changedCode) > 0 {
 			utils.WriteFormatBytes(changedCode, vOld.path)
 			vOld = parseServiceFile(vOld.path)
 		}
@@ -183,12 +199,10 @@ func searchMissingMethods(old *ServiceFile, new *ServiceFile) string {
 	ptx := printgo.NewPTX()
 	for structName, temp := range new.serviceStructsMap {
 		zaplog.SUG.Debugln("-")
-		zaplog.SUG.Debugln(new.GetNode(temp.structType))
-		zaplog.SUG.Debugln("-")
-
+		zaplog.SUG.Debugln("checking", structName)
 		serviceStruct, ok := old.serviceStructsMap[structName]
 		if !ok {
-			ptx.Println(new.GetStructNode(structName))
+			ptx.Println("type", structName, new.GetNode(temp.structType))
 			methods := new.serviceStructsMap[structName].methods
 			for _, method := range methods {
 				ptx.Println(new.GetNode(method))
@@ -211,12 +225,11 @@ func searchMissingMethods(old *ServiceFile, new *ServiceFile) string {
 }
 
 // 当开发者删除 proto 中某个函数时，这个函数能自动把被删除的函数转换为非导出的
-func notExportUselessMethods(old *ServiceFile, new *ServiceFile) []byte {
+func notExportSomeMethods(old *ServiceFile, new *ServiceFile) []byte {
 	var uselessMethods []*ast.FuncDecl
-	for structName, temp := range old.serviceStructsMap {
+	for structName := range old.serviceStructsMap {
 		zaplog.SUG.Debugln("-")
-		zaplog.SUG.Debugln(old.GetNode(temp.structType))
-		zaplog.SUG.Debugln("-")
+		zaplog.SUG.Debugln("checking", structName)
 		oldMethods := old.serviceStructsMap[structName].methods
 
 		//假如新服务里没有某个类型，则这个类型下的所有方法都应该是非导出的
@@ -266,8 +279,7 @@ func notExportUselessMethods(old *ServiceFile, new *ServiceFile) []byte {
 func sortServiceMethods(old *ServiceFile, new *ServiceFile) {
 	for structName, newServiceStruct := range new.serviceStructsMap {
 		zaplog.SUG.Debugln("-")
-		zaplog.SUG.Debugln(new.GetNode(newServiceStruct.structType))
-		zaplog.SUG.Debugln("-")
+		zaplog.SUG.Debugln("type", structName)
 
 		//找到旧服务的结构体，由于新服务是个壳，旧服务是实现了业务的代码，因此旧服务的同名结构体一定存在
 		oldStructParam, ok := old.serviceStructsMap[structName]
@@ -275,12 +287,17 @@ func sortServiceMethods(old *ServiceFile, new *ServiceFile) {
 
 		//这里是旧服务的方法列表，需要根据新文件的索引，把旧文件重新编排，因此首先是收集有效的旧方法列表
 		var methods []*ast.FuncDecl
-		for _, fun := range oldStructParam.methods {
-			_, ok := newServiceStruct.methodsMap[fun.Name.Name]
+		for _, method := range oldStructParam.methods {
+			_, ok := newServiceStruct.methodsMap[method.Name.Name]
 			if ok {
-				methods = append(methods, fun)
+				methods = append(methods, method)
 			}
 		}
+		for _, method := range methods {
+			zaplog.SUG.Debugln("func", method.Name.Name)
+		}
+		zaplog.SUG.Debugln("-")
+
 		if len(methods) == 0 {
 			return //假如啥都没有，也就不用排序啦，其实也可更严格些比如 len < 2 时，也是不用排序的，但不要这么做以免影响调试效果
 		}
@@ -363,21 +380,15 @@ func parseServiceFile(path string) *ServiceFile {
 	code := rese.V1(os.ReadFile(path))
 	astBundle := rese.P1(syntaxgo_ast.NewAstBundleV1(code))
 	astFile, _ := astBundle.GetBundle()
-
 	structTypes := syntaxgo_search.MapStructTypesByName(astFile)
-	zaplog.SUG.Debugln(len(structTypes))
 
 	var serviceStructsMap = make(map[string]*ServiceStruct, len(structTypes))
 	for structName, structType := range structTypes {
-		zaplog.SUG.Debugln(structName)
 		zaplog.SUG.Debugln("-")
-		zaplog.SUG.Debugln(syntaxgo_astnode.GetText(code, structType))
-		zaplog.SUG.Debugln("-")
-
+		zaplog.SUG.Debugln("type", structName)
 		methods := syntaxgo_search.FindFunctionsByReceiverName(astFile, structName, true)
-		zaplog.SUG.Debugln("-")
 		for _, fun := range methods {
-			zaplog.SUG.Debugln(fun.Name.Name)
+			zaplog.SUG.Debugln("func", fun.Name.Name)
 		}
 		zaplog.SUG.Debugln("-")
 
@@ -410,10 +421,6 @@ type ServiceFile struct {
 
 func (x *ServiceFile) GetNode(astNode ast.Node) string {
 	return syntaxgo_astnode.GetText(x.code, astNode)
-}
-
-func (x *ServiceFile) GetStructNode(structName string) string {
-	return syntaxgo_astnode.GetText(x.code, x.serviceStructsMap[structName].structType)
 }
 
 type ServiceStruct struct {
