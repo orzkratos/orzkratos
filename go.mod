@@ -4,7 +4,7 @@ go 1.22.8
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
-	github.com/orzkratos/astkratos v0.0.3
+	github.com/orzkratos/astkratos v0.0.5
 	github.com/yyle88/done v1.0.22
 	github.com/yyle88/eroticgo v0.0.3
 	github.com/yyle88/formatgo v1.0.22
@@ -23,7 +23,6 @@ require (
 )
 
 require (
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

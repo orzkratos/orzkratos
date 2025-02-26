@@ -25,6 +25,7 @@ import (
 	"github.com/yyle88/syntaxgo/syntaxgo_astnode"
 	"github.com/yyle88/syntaxgo/syntaxgo_search"
 	"github.com/yyle88/zaplog"
+	"go.uber.org/zap"
 )
 
 func GenServicesCode(projectRoot string) {
@@ -38,11 +39,11 @@ func GenServicesCode(projectRoot string) {
 
 	must.Done(astkratos.WalkFiles(protoVolume, astkratos.NewSuffixMatcher([]string{".proto"}), func(protoPath string, info os.FileInfo) error {
 		createNewService(&createNewServiceParam{
-			ProjectRoot:    projectRoot,
-			ProtoPath:      protoPath,
-			ServiceTypes:   serviceTypes,
-			OldServiceRoot: oldServiceRoot,
-			NewServiceRoot: newServiceRoot,
+			projectRoot:    projectRoot,
+			protoPath:      protoPath,
+			serviceTypes:   serviceTypes,
+			oldServiceRoot: oldServiceRoot,
+			newServiceRoot: newServiceRoot,
 		})
 		return nil
 	}))
@@ -67,33 +68,33 @@ func GenServicesOnce(projectRoot string, protoPath string) {
 	newServiceRoot := filepath.Join(oldServiceRoot, "tmp", time.Now().Format("20060102150405"))
 
 	createNewService(&createNewServiceParam{
-		ProjectRoot:    projectRoot,
-		ProtoPath:      protoPath,
-		ServiceTypes:   serviceTypes,
-		OldServiceRoot: oldServiceRoot,
-		NewServiceRoot: newServiceRoot,
+		projectRoot:    projectRoot,
+		protoPath:      protoPath,
+		serviceTypes:   serviceTypes,
+		oldServiceRoot: oldServiceRoot,
+		newServiceRoot: newServiceRoot,
 	})
 
 	writeServiceCode(oldServiceRoot, newServiceRoot)
 }
 
 type createNewServiceParam struct {
-	ProjectRoot    string
-	ProtoPath      string
-	ServiceTypes   []*astkratos.GrpcTypeDefinition
-	OldServiceRoot string
-	NewServiceRoot string
+	projectRoot    string
+	protoPath      string
+	serviceTypes   []*astkratos.GrpcTypeDefinition
+	oldServiceRoot string
+	newServiceRoot string
 }
 
 func createNewService(param *createNewServiceParam) {
-	zaplog.SUG.Debugln("create-new-service-param:", neatjsons.S(param))
+	zaplog.LOG.Debug("create-new-service-param:", zap.String("proto_path", param.protoPath))
 	var missing = false
 	var meeting = false
 
-	protoCode := string(rese.V1(os.ReadFile(param.ProtoPath)))
-	for _, serviceType := range param.ServiceTypes {
+	protoCode := string(rese.V1(os.ReadFile(param.protoPath)))
+	for _, serviceType := range param.serviceTypes {
 		must.OK(serviceType.Name)
-		zaplog.SUG.Debugln("check-service-in-proto:", serviceType.Name, "path:", param.ProtoPath)
+		zaplog.SUG.Debugln("check-service-in-proto:", serviceType.Name)
 
 		if !strings.Contains(protoCode, fmt.Sprintf("service %s {", serviceType.Name)) {
 			zaplog.SUG.Debugln("service-not-in-proto")
@@ -101,7 +102,7 @@ func createNewService(param *createNewServiceParam) {
 		}
 		zaplog.SUG.Debugln("check-service-existing:", serviceType.Name)
 
-		if !ossoftexist.IsFile(filepath.Join(param.ProjectRoot, "internal/service", strings.ToLower(serviceType.Name)+".go")) {
+		if !ossoftexist.IsFile(filepath.Join(param.projectRoot, "internal/service", strings.ToLower(serviceType.Name)+".go")) {
 			zaplog.SUG.Debugln("missing:", serviceType.Name)
 			missing = true
 		} else {
@@ -110,23 +111,23 @@ func createNewService(param *createNewServiceParam) {
 		}
 	}
 
-	zaplog.SUG.Debugln("check-service", "meeting:", meeting, "missing:", missing)
-
-	//只要有1个 service 是 missing 的就新建服务
+	zaplog.SUG.Debugln("check-service", "missing:", missing)
 	if missing {
-		zaplog.SUG.Debugln("create-service-in-path:", param.OldServiceRoot)
-		out := rese.V1(osexec.ExecInPath(param.ProjectRoot, "kratos", "proto", "server", param.ProtoPath, "-t", param.OldServiceRoot))
+		//只要有1个 service 是 missing 的就新建服务
+		zaplog.SUG.Debugln("create-service-in-path:", param.oldServiceRoot)
+		out := rese.V1(osexec.ExecInPath(param.projectRoot, "kratos", "proto", "server", param.protoPath, "-t", param.oldServiceRoot))
 		zaplog.SUG.Debugln("output:", string(out))
 	}
-	//只要有1个 service 是 meeting 的就重建服务和检查服务，看看是不是需要更新代码
-	//注意，这块逻辑要放在新建逻辑的后面，以确保重写时服务已经存在
+
+	zaplog.SUG.Debugln("check-service", "meeting:", meeting)
 	if meeting {
-		zaplog.SUG.Debugln("create-service-in-path:", param.NewServiceRoot)
-		must.Done(os.MkdirAll(param.NewServiceRoot, 0755))
-		out := rese.V1(osexec.ExecInPath(param.ProjectRoot, "kratos", "proto", "server", param.ProtoPath, "-t", param.NewServiceRoot))
+		//只要有1个 service 是 meeting 的就重建服务和检查服务，看看是不是需要更新代码
+		zaplog.SUG.Debugln("create-service-in-path:", param.newServiceRoot)
+		must.Done(os.MkdirAll(param.newServiceRoot, 0755))
+		out := rese.V1(osexec.ExecInPath(param.projectRoot, "kratos", "proto", "server", param.protoPath, "-t", param.newServiceRoot))
 		zaplog.SUG.Debugln("output:", string(out))
 	}
-	zaplog.SUG.Debugln("return")
+	zaplog.SUG.Debugln("check-service", "success.")
 }
 
 func writeServiceCode(oldServiceRoot string, newServiceRoot string) {
