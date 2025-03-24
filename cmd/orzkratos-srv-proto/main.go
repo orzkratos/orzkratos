@@ -30,7 +30,9 @@ func main() {
 	zaplog.LOG.Debug("project:", zap.String("path", projectPath))
 
 	var protoName string
-	flag.StringVar(&protoName, "name", "", "proto-file-name. example: demo.proto / demo")
+	flag.StringVar(&protoName, "name", "", "proto-filename. example: demo.proto / demo")
+	var autoConfirm bool
+	flag.BoolVar(&autoConfirm, "auto", false, "auto-confirm")
 	flag.Parse()
 
 	if protoName != "" {
@@ -46,12 +48,12 @@ func main() {
 		protoPath = filepath.Join(shortMiddle, protoPath)
 		zaplog.LOG.Debug("protoPath:", zap.String("protoPath", protoPath))
 
-		if !chooseConfirm("execute sync kratos service once?") {
+		if !autoConfirm && !chooseConfirm("execute sync kratos service once?") {
 			return
 		}
 		synckratos.GenServicesOnce(projectPath, protoPath)
 	} else {
-		if !chooseConfirm("execute sync kratos service code?") {
+		if !autoConfirm && !chooseConfirm("execute sync kratos service code?") {
 			return
 		}
 		synckratos.GenServicesCode(projectPath)
