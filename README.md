@@ -18,17 +18,17 @@ go install github.com/orzkratos/orzkratos/cmd/orzkratos-srv-proto@latest
 
 ### New demo proto:
 ```bash
-cd project-path/api/helloworld && orzkratos-add-proto demo.proto
+cd demo3project-path/api/helloworld && orzkratos-add-proto demo.proto
 ```
 
 Same as:
 ```bash
-cd project-path && kratos proto add api/helloworld/demo.proto
+cd demo3project-path && kratos proto add api/helloworld/demo.proto
 ```
 
 ### Simple command:
 ```bash
-cd project-path/api/helloworld
+cd demo3project-path/api/helloworld
 
 orzkratos-add-proto demo
 ```
@@ -37,17 +37,24 @@ orzkratos-add-proto demo
 
 ### Sync demo service with proto:
 ```bash
-cd project-path/api/helloworld && orzkratos-srv-proto demo.proto
+cd demo3project-path/api/helloworld && orzkratos-srv-proto demo.proto
 ```
 
 Same as:
 ```bash
-cd project-path && orzkratos-srv-proto api/helloworld/demo.proto
+cd demo3project-path && orzkratos-srv-proto api/helloworld/demo.proto
 ```
 
-### Simple command:
+### Simple command (need confirm):
 ```bash
-cd project-path/api/helloworld
+cd demo3project-path/api/helloworld
 
 orzkratos-srv-proto
+```
+
+### Simple command (auto confirm):
+```bash
+cd demo3project-path/api/helloworld
+
+orzkratos-srv-proto -auto
 ```

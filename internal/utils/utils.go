@@ -71,10 +71,7 @@ func WriteFormatBytes(data []byte, path string) {
 func GetProjectPath(currentPath string) (string, string) {
 	projectPath := currentPath
 	shortMiddle := ""
-	for {
-		if osomitexist.IsFile(filepath.Join(projectPath, "go.mod")) {
-			break
-		}
+	for !osomitexist.IsFile(filepath.Join(projectPath, "go.mod")) {
 		subName := filepath.Base(projectPath)
 
 		prePath := filepath.Dir(projectPath)
