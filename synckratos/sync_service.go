@@ -54,7 +54,7 @@ func GenServicesCode(projectRoot string) {
 
 	if path := newServiceTemp; ossoftexist.IsRoot(newServiceTemp) {
 		if rese.V1(utils.CountFiles(path)) == 0 {
-			must.Done(os.RemoveAll(path)) //结束以后要删除这个多余的目录
+			must.Done(os.RemoveAll(path)) // Complete, remove redundant DIR // 完成时删除多余的 DIR
 		}
 	}
 
@@ -114,7 +114,9 @@ func createNewService(param *createNewServiceParam) {
 		}
 		zaplog.SUG.Debugln("check-service-existing:", serviceType.Name)
 
-		if !ossoftexist.IsFile(filepath.Join(param.projectRoot, "internal/service", strings.ToLower(serviceType.Name)+".go")) {
+		serviceFileName := strings.ToLower(serviceType.Name) + ".go"
+		serviceFilePath := filepath.Join(param.projectRoot, "internal/service", serviceFileName)
+		if !ossoftexist.IsFile(serviceFilePath) {
 			zaplog.SUG.Debugln("missing:", serviceType.Name)
 			missing = true
 		} else {
@@ -169,7 +171,7 @@ func replaceProtoImports(newServiceRoot string) {
 				"google.golang.org/protobuf/types/known/wrapperspb",
 				"google.golang.org/protobuf/types/known/emptypb",
 			})
-			utils.WriteFormatBytes(newSource, path)
+			utils.FormatAndWriteCode(path, newSource)
 		}
 		return nil
 	}))
@@ -193,12 +195,12 @@ func syncServicesCode(oldServiceRoot string, newServiceRoot string) {
 		if missingCode := searchMissingMethods(vOld, vNew); len(missingCode) > 0 {
 			changedCode := []byte((string(vOld.code) + "\n" + missingCode))
 
-			utils.WriteFormatBytes(changedCode, vOld.path)
+			utils.FormatAndWriteCode(vOld.path, changedCode)
 			vOld = parseServiceFile(vOld.path)
 		}
 
 		if changedCode := notExportSomeMethods(vOld, vNew); len(changedCode) > 0 {
-			utils.WriteFormatBytes(changedCode, vOld.path)
+			utils.FormatAndWriteCode(vOld.path, changedCode)
 			vOld = parseServiceFile(vOld.path)
 		}
 
@@ -266,13 +268,13 @@ func notExportSomeMethods(old *ServiceFile, new *ServiceFile) []byte {
 		return []byte{}
 	}
 
-	var source = utils.CloneBytes(old.code)
+	var source = utils.CopyBytes(old.code)
 	var change = false //结果是否改变，假如没有替换的就不用写回文件，能提升性能
 	for _, method := range uselessMethods {
 		name := method.Name.Name
 		zaplog.SUG.Debugln("useless", name)
-		if utils.C0IsUpper(name) {
-			newName := []byte(utils.CvtC0Lower(name))
+		if utils.IsFirstCharUpper(name) {
+			newName := []byte(utils.LowerFirstChar(name))
 			oldName := syntaxgo_astnode.GetCode(source, method.Name)
 			must.Same(len(newName), len(oldName))
 			copy(oldName, newName) //这里由于长度相同，因此可以直接复制在相同的位置，就算是大功告成啦
@@ -378,7 +380,7 @@ func sortServiceMethods(old *ServiceFile, new *ServiceFile) {
 		}
 
 		//把代码格式化再写回文件
-		utils.WriteFormatBytes(ptx.Bytes(), old.path)
+		utils.FormatAndWriteCode(old.path, ptx.Bytes())
 	}
 }
 

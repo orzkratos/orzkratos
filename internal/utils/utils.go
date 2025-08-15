@@ -11,6 +11,8 @@ import (
 	"github.com/yyle88/osexistpath/osomitexist"
 )
 
+// CountFiles counts all files in the specified DIR recursively
+// 递归统计指定 DIR 中的所有文件数量
 func CountFiles(root string) (count int64, err error) {
 	err = WalkFiles(root, func(path string, info os.FileInfo) error {
 		count++
@@ -22,6 +24,8 @@ func CountFiles(root string) (count int64, err error) {
 	return count, nil
 }
 
+// WalkFiles walks through all files in DIR and applies function to each file
+// 遍历 DIR 中的所有文件并对每个文件执行函数
 func WalkFiles(root string, run func(path string, info os.FileInfo) error) (err error) {
 	err = filepath.Walk(root,
 		func(path string, info os.FileInfo, err error) error {
@@ -40,7 +44,9 @@ func WalkFiles(root string, run func(path string, info os.FileInfo) error) (err 
 	return nil
 }
 
-func C0IsUpper(s string) bool {
+// IsFirstCharUpper checks if the first character of string is uppercase
+// 检查字符串的第一个字符是否为大写
+func IsFirstCharUpper(s string) bool {
 	runes := []rune(s)
 	if len(runes) > 0 {
 		return unicode.IsUpper(runes[0])
@@ -48,7 +54,9 @@ func C0IsUpper(s string) bool {
 	return false
 }
 
-func CvtC0Lower(s string) string {
+// LowerFirstChar converts the first character of string to lowercase
+// 将字符串的第一个字符转换为小写
+func LowerFirstChar(s string) string {
 	runes := []rune(s)
 	if len(runes) > 0 {
 		runes[0] = unicode.ToLower(runes[0])
@@ -56,18 +64,24 @@ func CvtC0Lower(s string) string {
 	return string(runes)
 }
 
-func CloneBytes(org []byte) (dst []byte) {
-	dst = make([]byte, len(org)) //看来得提前分配空间否则不能拷贝
-	copy(dst, org)
+// CopyBytes creates a deep copy of byte slice
+// 创建字节切片的深度拷贝
+func CopyBytes(src []byte) []byte {
+	dst := make([]byte, len(src)) // Allocate space before copying // 复制前需要分配空间
+	copy(dst, src)
 	return dst
 }
 
-func WriteFormatBytes(data []byte, path string) {
+// FormatAndWriteCode formats raw Go code and writes to file
+// 对原始 Go 代码进行格式化并写入文件
+func FormatAndWriteCode(path string, data []byte) {
 	code, _ := formatgo.FormatBytes(data)
 	must.Have(code)
 	must.Done(os.WriteFile(path, code, 0644))
 }
 
+// GetProjectPath finds project root by locating go.mod file
+// 通过定位 go.mod 文件找到项目根路径
 func GetProjectPath(currentPath string) (string, string) {
 	projectPath := currentPath
 	shortMiddle := ""
