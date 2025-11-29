@@ -1,6 +1,12 @@
+// Package utils provides common utilities used across the orzkratos project
+// Contains file operations, string manipulation, and path utilities
+//
+// utils 包提供 orzkratos 项目中使用的通用工具函数
+// 包含文件操作、字符串处理和路径工具
 package utils
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"unicode"
@@ -11,40 +17,30 @@ import (
 	"github.com/yyle88/osexistpath/osomitexist"
 )
 
-// CountFiles counts all files in the specified DIR recursively
-// 递归统计指定 DIR 中的所有文件数量
-func CountFiles(root string) (count int64, err error) {
-	err = WalkFiles(root, func(path string, info os.FileInfo) error {
-		count++
+// HasFiles checks if DIR contains files in depth
+// Returns true on first file found, stops walk at once
+//
+// HasFiles 深度检查 DIR 中是否包含文件
+// 找到第一个文件时返回 true 并立即停止遍历
+func HasFiles(root string) (bool, error) {
+	var exist bool
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			exist = true
+			return filepath.SkipAll
+		}
 		return nil
 	})
 	if err != nil {
-		return 0, erero.Wro(err)
+		return false, erero.Wro(err)
 	}
-	return count, nil
+	return exist, nil
 }
 
-// WalkFiles walks through all files in DIR and applies function to each file
-// 遍历 DIR 中的所有文件并对每个文件执行函数
-func WalkFiles(root string, run func(path string, info os.FileInfo) error) (err error) {
-	err = filepath.Walk(root,
-		func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return erero.Wro(err)
-			}
-			if info.IsDir() {
-				return nil
-			}
-			return run(path, info)
-		},
-	)
-	if err != nil {
-		return erero.Wro(err)
-	}
-	return nil
-}
-
-// IsFirstCharUpper checks if the first character of string is uppercase
+// IsFirstCharUpper checks if first rune of string is uppercase
 // 检查字符串的第一个字符是否为大写
 func IsFirstCharUpper(s string) bool {
 	runes := []rune(s)
@@ -54,7 +50,7 @@ func IsFirstCharUpper(s string) bool {
 	return false
 }
 
-// LowerFirstChar converts the first character of string to lowercase
+// LowerFirstChar converts the first rune of string to lowercase
 // 将字符串的第一个字符转换为小写
 func LowerFirstChar(s string) string {
 	runes := []rune(s)
@@ -64,8 +60,8 @@ func LowerFirstChar(s string) string {
 	return string(runes)
 }
 
-// CopyBytes creates a deep copy of byte slice
-// 创建字节切片的深度拷贝
+// CopyBytes creates a clone of byte slice
+// 创建字节切片的克隆
 func CopyBytes(src []byte) []byte {
 	dst := make([]byte, len(src)) // Allocate space before copying // 复制前需要分配空间
 	copy(dst, src)
@@ -80,19 +76,22 @@ func FormatAndWriteCode(path string, data []byte) {
 	must.Done(os.WriteFile(path, code, 0644))
 }
 
-// GetProjectPath finds project root by locating go.mod file
-// 通过定位 go.mod 文件找到项目根路径
+// GetProjectPath finds project root via go.mod file location
+// Returns project root path and relative path from current to root
+//
+// GetProjectPath 通过定位 go.mod 文件找到项目根路径
+// 返回项目根路径和从当前位置到根路径的相对路径
 func GetProjectPath(currentPath string) (string, string) {
 	projectPath := currentPath
 	shortMiddle := ""
 	for !osomitexist.IsFile(filepath.Join(projectPath, "go.mod")) {
-		subName := filepath.Base(projectPath)
+		subName := filepath.Base(projectPath) // Extract current DIR name // 提取当前 DIR 名称
 
 		prePath := filepath.Dir(projectPath)
-		must.Different(prePath, projectPath)
+		must.Different(prePath, projectPath) // Ensure not stuck at root // 确保没有卡在根路径
 
 		projectPath = prePath
-		shortMiddle = filepath.Join(subName, shortMiddle)
+		shortMiddle = filepath.Join(subName, shortMiddle) // Build relative path // 构建相对路径
 	}
 	return projectPath, shortMiddle
 }

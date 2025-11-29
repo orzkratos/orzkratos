@@ -10,6 +10,8 @@ import (
 	"github.com/yyle88/rese"
 )
 
+// TestParseServiceFile tests parsing Go service files to extract struct and method info
+// TestParseServiceFile 测试解析 Go 服务文件以提取结构体和方法信息
 func TestParseServiceFile(t *testing.T) {
 	// Create temp DIR using modern os.MkdirTemp
 	// 使用现代化的 os.MkdirTemp 创建临时 DIR
@@ -38,15 +40,17 @@ func (s *GreeterService) SayWorld(ctx context.Context, in *v1.HelloRequest) (*v1
 	serviceFile := parseServiceFile(testFile)
 	require.NotNil(t, serviceFile)
 	require.Equal(t, testFile, serviceFile.path)
-	require.NotEmpty(t, serviceFile.serviceStructsMap)
+	require.NotEmpty(t, serviceFile.serviceStructMap)
 
 	// Check if GreeterService exists
 	// 检查 GreeterService 是否存在
-	greeterStruct, exists := serviceFile.serviceStructsMap["GreeterService"]
+	greeterStruct, exists := serviceFile.serviceStructMap["GreeterService"]
 	require.True(t, exists)
 	require.Len(t, greeterStruct.methods, 2)
 }
 
+// TestSearchMissingMethods tests detection of missing methods between old and new service files
+// TestSearchMissingMethods 测试检测旧服务文件和新服务文件之间缺失的方法
 func TestSearchMissingMethods(t *testing.T) {
 	// Create temp DIR using modern os.MkdirTemp
 	// 使用现代化的 os.MkdirTemp 创建临时 DIR
@@ -55,7 +59,7 @@ func TestSearchMissingMethods(t *testing.T) {
 		must.Done(os.RemoveAll(path))
 	}(tempRoot)
 
-	// Create old service with fewer methods
+	// Create old service with less methods
 	// 创建方法较少的旧服务
 	oldContent := `package service
 
@@ -91,8 +95,8 @@ func (s *GreeterService) SayWorld(ctx context.Context, in *v1.HelloRequest) (*v1
 	oldService := parseServiceFile(oldFile)
 	newService := parseServiceFile(newFile)
 
-	// Search for missing methods
-	// 搜索缺失的方法
+	// Detect missing methods
+	// 检测缺失的方法
 	missingCode := searchMissingMethods(oldService, newService)
 	require.NotEmpty(t, missingCode)
 
